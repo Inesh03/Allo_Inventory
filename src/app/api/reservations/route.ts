@@ -22,63 +22,111 @@ export async function POST(req: NextRequest) {
 
     const { productId, warehouseId, quantity } = parsed.data;
 
-    const result = await prisma.$transaction(async (tx) => {
-      const inventory = await tx.inventory.findUnique({
-        where: {
-          productId_warehouseId: {
+    const result = await prisma.$transaction(
+      async (tx: Prisma.TransactionClient) => {
+        const now = new Date();
+
+        const existingReservation = await tx.reservation.findFirst({
+          where: {
             productId,
             warehouseId,
+            status: ReservationStatus.PENDING,
           },
-        },
-      });
-
-      if (!inventory) {
-        throw new Error("INVENTORY_NOT_FOUND");
-      }
-
-      const available =
-        inventory.totalQuantity - inventory.reservedQuantity;
-
-      if (available < quantity) {
-        throw new Error("INSUFFICIENT_STOCK");
-      }
-
-      const updated = await tx.inventory.updateMany({
-        where: {
-          productId,
-          warehouseId,
-          reservedQuantity: inventory.reservedQuantity,
-        },
-        data: {
-          reservedQuantity: {
-            increment: quantity,
+          orderBy: {
+            createdAt: "desc",
           },
-        },
-      });
+        });
 
-      if (updated.count === 0) {
-        throw new Error("CONFLICT");
+        if (existingReservation) {
+          if (existingReservation.expiresAt > now) {
+            return {
+              reservation: existingReservation,
+              reused: true,
+            };
+          }
+
+          await tx.inventory.updateMany({
+            where: {
+              productId,
+              warehouseId,
+              reservedQuantity: {
+                gte: existingReservation.quantity,
+              },
+            },
+            data: {
+              reservedQuantity: {
+                decrement: existingReservation.quantity,
+              },
+            },
+          });
+
+          await tx.reservation.update({
+            where: { id: existingReservation.id },
+            data: {
+              status: ReservationStatus.RELEASED,
+              releasedAt: now,
+            },
+          });
+        }
+
+        const inventory = await tx.inventory.findUnique({
+          where: {
+            productId_warehouseId: {
+              productId,
+              warehouseId,
+            },
+          },
+        });
+
+        if (!inventory) {
+          return { error: "INVENTORY_NOT_FOUND" as const };
+        }
+
+        const available =
+          inventory.totalQuantity - inventory.reservedQuantity;
+
+        if (available < quantity) {
+          return { error: "INSUFFICIENT_STOCK" as const };
+        }
+
+        const updated = await tx.inventory.updateMany({
+          where: {
+            productId,
+            warehouseId,
+            reservedQuantity: inventory.reservedQuantity,
+          },
+          data: {
+            reservedQuantity: {
+              increment: quantity,
+            },
+          },
+        });
+
+        if (updated.count === 0) {
+          return { error: "CONFLICT" as const };
+        }
+
+        const reservation = await tx.reservation.create({
+          data: {
+            productId,
+            warehouseId,
+            quantity,
+            status: ReservationStatus.PENDING,
+            expiresAt: new Date(
+              now.getTime() + RESERVATION_WINDOW_MINUTES * 60 * 1000
+            ),
+          },
+        });
+
+        return {
+          reservation,
+          reused: false,
+        };
       }
+    );
 
-      const reservation = await tx.reservation.create({
-        data: {
-          productId,
-          warehouseId,
-          quantity,
-          status: ReservationStatus.PENDING,
-          expiresAt: new Date(
-            Date.now() + RESERVATION_WINDOW_MINUTES * 60 * 1000
-          ),
-        },
-      });
-
-      return reservation;
-    });
-
-    return NextResponse.json(result, { status: 201 });
-  } catch (error) {
-    if (error instanceof Error) {
-      if (error.message === "INVENTORY_NOT_FOUND") {
+    if ("error" in result) {
+      if (result.error === "INVENTORY_NOT_FOUND") {
         return NextResponse.json(
           { error: "Inventory not found for this product and warehouse" },
           { status: 404 }
@@ -86,8 +134,8 @@ export async function POST(req: NextRequest) {
       }
 
       if (
-        error.message === "INSUFFICIENT_STOCK" ||
-        error.message === "CONFLICT"
+        result.error === "INSUFFICIENT_STOCK" ||
+        result.error === "CONFLICT"
       ) {
         return NextResponse.json(
           { error: "Not enough stock available" },
@@ -96,6 +144,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    return NextResponse.json(result.reservation, { status: 201 });
+  } catch (error) {
     console.error(error);
 
     return NextResponse.json(

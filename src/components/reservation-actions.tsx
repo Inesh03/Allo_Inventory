@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type ReservationActionsProps = {
@@ -19,11 +19,18 @@ export default function ReservationActions({
   const [error, setError] = useState("");
   const [expired, setExpired] = useState(false);
   const [timeLeft, setTimeLeft] = useState("");
+  const hasRefreshedOnExpiry = useRef(false);
 
   const isPending = status === "PENDING";
   const expiryTime = useMemo(() => new Date(expiresAt).getTime(), [expiresAt]);
 
   useEffect(() => {
+    if (!isPending) {
+      setExpired(false);
+      setTimeLeft("");
+      return;
+    }
+
     function updateCountdown() {
       const now = Date.now();
       const diff = expiryTime - now;
@@ -31,6 +38,12 @@ export default function ReservationActions({
       if (diff <= 0) {
         setExpired(true);
         setTimeLeft("Expired");
+
+        if (!hasRefreshedOnExpiry.current) {
+          hasRefreshedOnExpiry.current = true;
+          router.refresh();
+        }
+
         return;
       }
 
@@ -46,7 +59,7 @@ export default function ReservationActions({
     const interval = setInterval(updateCountdown, 1000);
 
     return () => clearInterval(interval);
-  }, [expiryTime]);
+  }, [expiryTime, isPending, router]);
 
   async function handleAction(action: "confirm" | "release") {
     try {
@@ -62,13 +75,17 @@ export default function ReservationActions({
       if (!response.ok) {
         if (response.status === 410) {
           setExpired(true);
-          setError("This reservation expired before confirmation. Please go back and reserve the item again.");
+          setError(
+            "This reservation expired before confirmation. Please go back and reserve the item again."
+          );
           router.refresh();
           return;
         }
 
         if (response.status === 409) {
-          setError("This action could not be completed because the inventory state changed.");
+          setError(
+            "This action could not be completed because the inventory state changed."
+          );
           router.refresh();
           return;
         }
@@ -78,6 +95,7 @@ export default function ReservationActions({
         return;
       }
 
+      router.push("/");
       router.refresh();
     } catch {
       setError(`Something went wrong while trying to ${action} the reservation.`);
