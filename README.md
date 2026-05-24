@@ -2,7 +2,7 @@
 
 A Next.js application that solves the checkout race condition for multi-warehouse inventory. When a customer proceeds to checkout, the system temporarily holds (reserves) units for a 10-minute window. If payment succeeds, the reservation is confirmed and stock is permanently decremented. If payment fails or the timer runs out, the hold is released and the units become available again.
 
-**Live URL:** _[Add your deployed URL here]_
+**Live URL:** [https://allo-inventory-bycqok49y-inesh03s-projects.vercel.app](https://allo-inventory-bycqok49y-inesh03s-projects.vercel.app)
 
 ---
 

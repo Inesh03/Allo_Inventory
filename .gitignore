@@ -32,7 +32,6 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
-!.env.example
 
 # vercel
 .vercel
@@ -43,6 +42,3 @@ next-env.d.ts
 
 /src/generated/prisma
 
-# docs
-/Allo Health - Engineering – Take-Home Exercise.docx
-analysis_results.md
