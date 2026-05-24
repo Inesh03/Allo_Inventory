@@ -40,6 +40,8 @@ npm run dev
 | `DATABASE_URL` | Postgres connection string (pooled/transaction mode) |
 | `DIRECT_URL` | Postgres direct connection string (for migrations) |
 | `CRON_SECRET` | Bearer token for the cron endpoint (any random string) |
+| `UPSTASH_REDIS_REST_URL` | Upstash Redis REST URL (for idempotency) |
+| `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis REST token |
 
 ---
 
@@ -103,18 +105,40 @@ This works well for the expected contention level. Under extreme load you could 
 
 ---
 
+## Idempotency (Bonus)
+
+The reserve (`POST /api/reservations`) and confirm (`POST /api/reservations/:id/confirm`) endpoints support idempotency via an `Idempotency-Key` header.
+
+### How it works
+
+1. The client generates a UUID (`crypto.randomUUID()`) before each action and sends it as an `Idempotency-Key` header
+2. The server checks Redis for a cached response under `idempotency:<key>`
+3. **Cache hit** → return the stored response immediately with an `X-Idempotency-Replayed: true` header. No database side effects.
+4. **Cache miss** → acquire a short NX lock (`idempotency-lock:<key>`), process the request normally, cache the response with a 24-hour TTL, release the lock
+
+The NX lock prevents two identical requests from racing through the handler simultaneously — if the lock is already held, the second request gets a `409` with a "request in progress" message.
+
+### Graceful degradation
+
+If Redis is unreachable (network blip, cold start), the middleware catches the error and falls through to process the request normally. Idempotency is a safety net, not a hard dependency — the app keeps working without it.
+
+### Why Upstash Redis?
+
+Upstash provides a serverless, HTTP-based Redis that works well with Vercel's edge/serverless model. No persistent connections to manage, and the free tier is more than enough for this use case.
+
+---
+
 ## Trade-offs & What I'd Do Differently
 
 **What's here:**
 - Full reservation lifecycle (reserve → confirm/release)
 - Concurrency-safe reservations with optimistic locking
 - Automatic expiry (cron + lazy cleanup)
+- Idempotency on reserve and confirm via Redis
 - Live countdown timer on the checkout page
 - Proper error handling with visible 409/410 feedback
 
 **What I'd improve with more time:**
-
-- **Idempotency** — I originally installed `@upstash/redis` with the intention of implementing `Idempotency-Key` header support, but ended up not getting to it. The approach would be: hash the idempotency key → check Redis for a cached response → if miss, process normally and cache the response with a TTL. Removed the unused dependency to keep things clean.
 
 - **Serializable transactions** — As mentioned above, bumping the isolation level or using `SELECT ... FOR UPDATE` would close the theoretical TOCTOU window entirely.
 
@@ -131,6 +155,7 @@ This works well for the expected contention level. Under extreme load you could 
 - **Framework:** Next.js 16 (App Router)
 - **Language:** TypeScript end-to-end
 - **Database:** PostgreSQL (Supabase) via Prisma ORM
+- **Cache:** Redis (Upstash) for idempotency
 - **Validation:** Zod
 - **Styling:** Tailwind CSS
 - **Deployment:** Vercel
