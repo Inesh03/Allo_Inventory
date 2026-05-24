@@ -1,13 +1,52 @@
 @import "tailwindcss";
 
+/* ──────────────────────────────────────
+   Allo Health Brand — Design Tokens
+   ────────────────────────────────────── */
+
+:root {
+  /* Primary purple palette */
+  --allo-purple-50: #f3f0ff;
+  --allo-purple-100: #e8e0ff;
+  --allo-purple-200: #d4c5ff;
+  --allo-purple-300: #b39dff;
+  --allo-purple-400: #8f6bff;
+  --allo-purple-500: #6e42e5;
+  --allo-purple-600: #5a35c4;
+  --allo-purple-700: #433393;
+  --allo-purple-800: #362a73;
+  --allo-purple-900: #2a2059;
+
+  /* Warm backgrounds */
+  --allo-cream: #fffcf6;
+  --allo-cream-dark: #fdf9f3;
+  --allo-cream-deeper: #faf5ec;
+
+  /* Gold accent */
+  --allo-gold: #eab308;
+  --allo-gold-light: rgba(234, 179, 8, 0.2);
+
+  /* Text */
+  --allo-text-primary: #1a1a2e;
+  --allo-text-secondary: #4a4a68;
+  --allo-text-muted: #6b7280;
+
+  /* Surface */
+  --allo-surface: #ffffff;
+  --allo-border: #e5e7eb;
+}
+
+/* ──────────────────────────────────────
+   Base Styles
+   ────────────────────────────────────── */
+
 html,
 body {
   margin: 0;
   padding: 0;
   min-height: 100%;
-  font-family: Arial, Helvetica, sans-serif;
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--allo-cream);
+  color: var(--allo-text-primary);
 }
 
 * {
@@ -17,4 +56,280 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* ──────────────────────────────────────
+   Animations
+   ────────────────────────────────────── */
+
+@keyframes allo-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes allo-fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes allo-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes allo-pulse-soft {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes allo-countdown-pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+.animate-allo-fade-in {
+  animation: allo-fade-in 0.5s ease-out both;
+}
+
+.animate-allo-fade-in-up {
+  animation: allo-fade-in-up 0.6s ease-out both;
+}
+
+.animate-allo-scale-in {
+  animation: allo-scale-in 0.4s ease-out both;
+}
+
+.animate-allo-pulse-soft {
+  animation: allo-pulse-soft 2s ease-in-out infinite;
+}
+
+.animate-allo-countdown-pulse {
+  animation: allo-countdown-pulse 1s ease-in-out infinite;
+}
+
+/* Staggered animation delays */
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
+.delay-400 { animation-delay: 400ms; }
+.delay-500 { animation-delay: 500ms; }
+
+/* ──────────────────────────────────────
+   Allo Card Styles
+   ────────────────────────────────────── */
+
+.allo-card {
+  background: var(--allo-surface);
+  border-radius: 1rem;
+  border: 1px solid var(--allo-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: box-shadow 0.25s ease, transform 0.25s ease;
+}
+
+.allo-card:hover {
+  box-shadow: 0 8px 25px rgba(67, 51, 147, 0.08), 0 4px 10px rgba(0, 0, 0, 0.04);
+  transform: translateY(-1px);
+}
+
+.allo-card-static {
+  background: var(--allo-surface);
+  border-radius: 1.5rem;
+  border: 1px solid var(--allo-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+/* ──────────────────────────────────────
+   Allo Button Styles
+   ────────────────────────────────────── */
+
+.allo-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--allo-purple-500);
+  border: none;
+  border-radius: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.allo-btn-primary:hover {
+  background: var(--allo-purple-600);
+  box-shadow: 0 4px 14px rgba(110, 66, 229, 0.35);
+  transform: translateY(-1px);
+}
+
+.allo-btn-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(110, 66, 229, 0.25);
+}
+
+.allo-btn-primary:disabled {
+  background: #d1d5db;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.allo-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--allo-purple-700);
+  background: var(--allo-surface);
+  border: 1.5px solid var(--allo-purple-200);
+  border-radius: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.allo-btn-secondary:hover {
+  background: var(--allo-purple-50);
+  border-color: var(--allo-purple-300);
+}
+
+.allo-btn-secondary:disabled {
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+}
+
+.allo-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--allo-text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 1rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.allo-btn-ghost:hover {
+  background: var(--allo-cream-dark);
+  color: var(--allo-purple-700);
+}
+
+/* ──────────────────────────────────────
+   Badge Styles
+   ────────────────────────────────────── */
+
+.allo-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+}
+
+.allo-badge-gold {
+  background: var(--allo-gold-light);
+  color: #92400e;
+}
+
+.allo-badge-purple {
+  background: var(--allo-purple-50);
+  color: var(--allo-purple-700);
+  outline: 1px solid var(--allo-purple-200);
+}
+
+.allo-badge-green {
+  background: #ecfdf5;
+  color: #065f46;
+  outline: 1px solid #a7f3d0;
+}
+
+.allo-badge-rose {
+  background: #fff1f2;
+  color: #be123c;
+  outline: 1px solid #fecdd3;
+}
+
+.allo-badge-amber {
+  background: #fffbeb;
+  color: #92400e;
+  outline: 1px solid #fde68a;
+}
+
+/* ──────────────────────────────────────
+   Stat Card Accent
+   ────────────────────────────────────── */
+
+.allo-stat-card {
+  background: var(--allo-surface);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--allo-border);
+  position: relative;
+  overflow: hidden;
+}
+
+.allo-stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: linear-gradient(180deg, var(--allo-purple-500), var(--allo-purple-300));
+  border-radius: 4px 0 0 4px;
+}
+
+/* ──────────────────────────────────────
+   Scrollbar styling
+   ────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--allo-purple-200);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--allo-purple-300);
 }
