@@ -1,34 +1,65 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma, ReservationStatus } from "@prisma/client";
 import { prisma } from "../../../../../lib/prisma";
+import { withIdempotency } from "../../../../../lib/idempotency";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
 
-  try {
-    const result = await prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
-        const reservation = await tx.reservation.findUnique({
-          where: { id },
-        });
+  return withIdempotency(req, async () => {
+    try {
+      const result = await prisma.$transaction(
+        async (tx: Prisma.TransactionClient) => {
+          const reservation = await tx.reservation.findUnique({
+            where: { id },
+          });
 
-        if (!reservation) {
-          return { error: "NOT_FOUND" as const };
-        }
+          if (!reservation) {
+            return { error: "NOT_FOUND" as const };
+          }
 
-        if (reservation.status !== ReservationStatus.PENDING) {
-          return { error: "INVALID_STATE" as const };
-        }
+          if (reservation.status !== ReservationStatus.PENDING) {
+            return { error: "INVALID_STATE" as const };
+          }
 
-        if (reservation.expiresAt <= new Date()) {
-          await tx.inventory.updateMany({
+          if (reservation.expiresAt <= new Date()) {
+            await tx.inventory.updateMany({
+              where: {
+                productId: reservation.productId,
+                warehouseId: reservation.warehouseId,
+                reservedQuantity: {
+                  gte: reservation.quantity,
+                },
+              },
+              data: {
+                reservedQuantity: {
+                  decrement: reservation.quantity,
+                },
+              },
+            });
+
+            await tx.reservation.update({
+              where: { id },
+              data: {
+                status: ReservationStatus.RELEASED,
+                releasedAt: new Date(),
+              },
+            });
+
+            return { error: "EXPIRED" as const };
+          }
+
+          const inventoryUpdate = await tx.inventory.updateMany({
             where: {
               productId: reservation.productId,
               warehouseId: reservation.warehouseId,
               reservedQuantity: {
+                gte: reservation.quantity,
+              },
+              totalQuantity: {
                 gte: reservation.quantity,
               },
             },
@@ -36,79 +67,51 @@ export async function POST(
               reservedQuantity: {
                 decrement: reservation.quantity,
               },
+              totalQuantity: {
+                decrement: reservation.quantity,
+              },
             },
           });
 
-          await tx.reservation.update({
+          if (inventoryUpdate.count === 0) {
+            return { error: "INVENTORY_MISMATCH" as const };
+          }
+
+          const updated = await tx.reservation.update({
             where: { id },
             data: {
-              status: ReservationStatus.RELEASED,
-              releasedAt: new Date(),
+              status: ReservationStatus.CONFIRMED,
+              confirmedAt: new Date(),
             },
           });
 
-          return { error: "EXPIRED" as const };
+          return { reservation: updated };
+        }
+      );
+
+      if ("error" in result) {
+        if (result.error === "EXPIRED") {
+          return NextResponse.json({ error: "Reservation expired" }, { status: 410 });
         }
 
-        const inventoryUpdate = await tx.inventory.updateMany({
-          where: {
-            productId: reservation.productId,
-            warehouseId: reservation.warehouseId,
-            reservedQuantity: {
-              gte: reservation.quantity,
-            },
-            totalQuantity: {
-              gte: reservation.quantity,
-            },
-          },
-          data: {
-            reservedQuantity: {
-              decrement: reservation.quantity,
-            },
-            totalQuantity: {
-              decrement: reservation.quantity,
-            },
-          },
-        });
-
-        if (inventoryUpdate.count === 0) {
-          return { error: "INVENTORY_MISMATCH" as const };
+        if (result.error === "NOT_FOUND") {
+          return NextResponse.json({ error: "Reservation not found" }, { status: 404 });
         }
 
-        const updated = await tx.reservation.update({
-          where: { id },
-          data: {
-            status: ReservationStatus.CONFIRMED,
-            confirmedAt: new Date(),
-          },
-        });
+        if (result.error === "INVENTORY_MISMATCH") {
+          return NextResponse.json(
+            { error: "Inventory changed before confirmation" },
+            { status: 409 }
+          );
+        }
 
-        return { reservation: updated };
-      }
-    );
-
-    if ("error" in result) {
-      if (result.error === "EXPIRED") {
-        return NextResponse.json({ error: "Reservation expired" }, { status: 410 });
+        return NextResponse.json({ error: "Invalid reservation state" }, { status: 400 });
       }
 
-      if (result.error === "NOT_FOUND") {
-        return NextResponse.json({ error: "Reservation not found" }, { status: 404 });
-      }
-
-      if (result.error === "INVENTORY_MISMATCH") {
-        return NextResponse.json(
-          { error: "Inventory changed before confirmation" },
-          { status: 409 }
-        );
-      }
-
-      return NextResponse.json({ error: "Invalid reservation state" }, { status: 400 });
+      return NextResponse.json(result.reservation);
+    } catch (error) {
+      console.error(error);
+      return NextResponse.json({ error: "Internal server error" }, { status: 500 });
     }
-
-    return NextResponse.json(result.reservation);
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  });
 }

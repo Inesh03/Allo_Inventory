@@ -23,10 +23,13 @@ export default function ReserveButton({
       setLoading(true);
       setError("");
 
+      const idempotencyKey = crypto.randomUUID();
+
       const response = await fetch("/api/reservations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Idempotency-Key": idempotencyKey,
         },
         body: JSON.stringify({
           productId,

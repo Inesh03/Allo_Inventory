@@ -66,8 +66,13 @@ export default function ReservationActions({
       setLoadingAction(action);
       setError("");
 
+      const idempotencyKey = crypto.randomUUID();
+
       const response = await fetch(`/api/reservations/${reservationId}/${action}`, {
         method: "POST",
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+        },
       });
 
       const data = await response.json();
