@@ -22,10 +22,14 @@ export async function POST(
         return { error: "INVALID_STATE" as const };
       }
 
+      // Guard: only decrement if reservedQuantity is high enough to avoid going negative
       await tx.inventory.updateMany({
         where: {
           productId: reservation.productId,
           warehouseId: reservation.warehouseId,
+          reservedQuantity: {
+            gte: reservation.quantity,
+          },
         },
         data: {
           reservedQuantity: {
