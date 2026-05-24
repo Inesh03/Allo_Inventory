@@ -1,36 +1,136 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Allo Inventory — Reservation System
 
-## Getting Started
+A Next.js application that solves the checkout race condition for multi-warehouse inventory. When a customer proceeds to checkout, the system temporarily holds (reserves) units for a 10-minute window. If payment succeeds, the reservation is confirmed and stock is permanently decremented. If payment fails or the timer runs out, the hold is released and the units become available again.
 
-First, run the development server:
+**Live URL:** _[Add your deployed URL here]_
+
+---
+
+## Local Setup
+
+### Prerequisites
+
+- Node.js 18+
+- A hosted PostgreSQL database (I used [Supabase](https://supabase.com/))
+
+### Steps
 
 ```bash
+# Clone and install
+git clone https://github.com/Inesh03/Allo_Inventory.git
+cd Allo_Inventory
+npm install
+
+# Set up environment variables
+cp .env.example .env
+# Then fill in your values (see below)
+
+# Run migrations and seed the database
+npx prisma migrate deploy
+npx prisma db seed
+
+# Start the dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment Variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | Postgres connection string (pooled/transaction mode) |
+| `DIRECT_URL` | Postgres direct connection string (for migrations) |
+| `CRON_SECRET` | Bearer token for the cron endpoint (any random string) |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## API Endpoints
 
-To learn more about Next.js, take a look at the following resources:
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/products` | List products with available stock per warehouse |
+| `GET` | `/api/warehouses` | List warehouses |
+| `POST` | `/api/reservations` | Reserve units for a product/warehouse. Returns `409` if not enough stock |
+| `POST` | `/api/reservations/:id/confirm` | Confirm reservation (payment succeeded). Returns `410` if expired |
+| `POST` | `/api/reservations/:id/release` | Release reservation early (payment failed or user cancelled) |
+| `GET` | `/api/cron/expire-reservations` | Cron endpoint — batch-releases expired reservations |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+---
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## How Reservation Expiry Works
 
-## Deploy on Vercel
+I went with a two-layer approach:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 1. Vercel Cron (primary)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+A `GET /api/cron/expire-reservations` endpoint runs every minute via Vercel Cron (`vercel.json`). It finds all `PENDING` reservations where `expiresAt < now`, decrements `reservedQuantity` on the matching inventory row, and marks them as `RELEASED`.
+
+Each reservation is released in its own database transaction, so if one fails it doesn't block the rest. The endpoint is protected by a `CRON_SECRET` bearer token.
+
+### 2. Lazy cleanup on read (safety net)
+
+The `GET /api/products` endpoint runs the same cleanup logic before returning results. This means even if the cron hasn't fired yet (or is delayed), the available stock numbers are always accurate when a user loads the product page.
+
+**Why both?** The cron handles the common case — reservations expire and get cleaned up within a minute. The lazy cleanup handles the edge case where a user loads the product page right after a reservation expires but before the next cron tick. Together they guarantee stock is never stuck as reserved.
+
+---
+
+## Concurrency
+
+The core challenge is: if two customers try to reserve the last unit simultaneously, exactly one should succeed.
+
+I used an **optimistic concurrency control** pattern. When reserving, the code:
+
+1. Reads the current `reservedQuantity` inside a Prisma interactive transaction
+2. Attempts an `updateMany` with a `WHERE reservedQuantity = <previously read value>` (CAS-style check)
+3. If `updated.count === 0`, another request got there first → return `409`
+
+```typescript
+const updated = await tx.inventory.updateMany({
+  where: {
+    productId,
+    warehouseId,
+    reservedQuantity: inventory.reservedQuantity, // CAS check
+  },
+  data: { reservedQuantity: { increment: quantity } },
+});
+
+if (updated.count === 0) {
+  return { error: "CONFLICT" };
+}
+```
+
+This works well for the expected contention level. Under extreme load you could hit a narrow TOCTOU window because Prisma's default transaction isolation is Read Committed. For a production system I'd either bump to `Serializable` isolation or use a raw `SELECT ... FOR UPDATE` to take a row-level lock. I kept it simple here because the CAS check catches the vast majority of races and the trade-off felt right for this scope.
+
+---
+
+## Trade-offs & What I'd Do Differently
+
+**What's here:**
+- Full reservation lifecycle (reserve → confirm/release)
+- Concurrency-safe reservations with optimistic locking
+- Automatic expiry (cron + lazy cleanup)
+- Live countdown timer on the checkout page
+- Proper error handling with visible 409/410 feedback
+
+**What I'd improve with more time:**
+
+- **Idempotency** — I originally installed `@upstash/redis` with the intention of implementing `Idempotency-Key` header support, but ended up not getting to it. The approach would be: hash the idempotency key → check Redis for a cached response → if miss, process normally and cache the response with a TTL. Removed the unused dependency to keep things clean.
+
+- **Serializable transactions** — As mentioned above, bumping the isolation level or using `SELECT ... FOR UPDATE` would close the theoretical TOCTOU window entirely.
+
+- **WebSocket / SSE for live updates** — Right now the product page shows a snapshot. If another user reserves the last unit, you won't see the stock change until you refresh. Server-Sent Events or polling would fix this.
+
+- **Tests** — I'd add integration tests for the concurrency edge cases (concurrent reserves for the last unit, confirm after expiry, double-release). These are the scenarios that matter most and are easy to get wrong.
+
+- **More granular stock management** — The current model has a single `totalQuantity` per product per warehouse. In production you'd want batch/lot tracking, safety stock thresholds, and possibly multi-location fulfillment logic.
+
+---
+
+## Tech Stack
+
+- **Framework:** Next.js 16 (App Router)
+- **Language:** TypeScript end-to-end
+- **Database:** PostgreSQL (Supabase) via Prisma ORM
+- **Validation:** Zod
+- **Styling:** Tailwind CSS
+- **Deployment:** Vercel
